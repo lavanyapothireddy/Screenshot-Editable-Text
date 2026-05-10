@@ -1,325 +1,377 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
-import "./App.css";
+/* ===========================
+   Screenshot → Editable Text
+   app.js  —  vanilla JS, no build required
+=========================== */
 
-const MODES = [
-  { id: "plain", label: "Plain Text", icon: "Aa", desc: "Raw text, no formatting" },
-  { id: "markdown", label: "Markdown", icon: "M↓", desc: "Structured with headings & lists" },
-  { id: "code", label: "Code", icon: "</>", desc: "Extract & detect language" },
-];
+const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const MAX_HIST   = 5;
 
-function useTypewriter(text, speed = 8) {
-  const [displayed, setDisplayed] = useState("");
-  const ref = useRef(null);
+/* ── DOM ── */
+const apiKeyEl    = document.getElementById('apiKey');
+const eyeBtn      = document.getElementById('eyeBtn');
+const eyeIcon     = document.getElementById('eyeIcon');
+const dropZone    = document.getElementById('dropZone');
+const fileInput   = document.getElementById('fileInput');
+const previewBox  = document.getElementById('previewBox');
+const previewImg  = document.getElementById('previewImg');
+const fileNameEl  = document.getElementById('fileName');
+const fileSizeEl  = document.getElementById('fileSize');
+const extractBtn  = document.getElementById('extractBtn');
+const btnLabel    = document.getElementById('btnLabel');
+const spinner     = document.getElementById('spinner');
+const clearBtn    = document.getElementById('clearBtn');
+const pasteBtn    = document.getElementById('pasteBtn');
+const resultCard  = document.getElementById('resultCard');
+const outputArea  = document.getElementById('outputArea');
+const copyBtn     = document.getElementById('copyBtn');
+const dlTxt       = document.getElementById('dlTxt');
+const dlMd        = document.getElementById('dlMd');
+const statChars   = document.getElementById('statChars');
+const statWords   = document.getElementById('statWords');
+const statLines   = document.getElementById('statLines');
+const statTime    = document.getElementById('statTime');
+const historyCard = document.getElementById('historyCard');
+const historyList = document.getElementById('historyList');
+const clearHistBtn= document.getElementById('clearHistoryBtn');
+const toastEl     = document.getElementById('toast');
 
-  useEffect(() => {
-    setDisplayed("");
-    if (!text) return;
-    let i = 0;
-    ref.current = setInterval(() => {
-      if (i < text.length) {
-        setDisplayed(text.slice(0, i + 1));
-        i++;
-      } else {
-        clearInterval(ref.current);
+/* ── State ── */
+let currentFile = null;
+let rawText     = '';
+let currentMode = 'raw';
+let history     = JSON.parse(localStorage.getItem('ocr_history') || '[]');
+
+/* ════════════════════════════════
+   TOAST
+════════════════════════════════ */
+let toastTimer;
+function toast(msg, duration = 2400) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), duration);
+}
+
+/* ════════════════════════════════
+   API KEY — show / hide toggle
+════════════════════════════════ */
+eyeBtn.addEventListener('click', () => {
+  const isPassword = apiKeyEl.type === 'password';
+  apiKeyEl.type    = isPassword ? 'text' : 'password';
+  eyeIcon.className = isPassword ? 'ti ti-eye-off' : 'ti ti-eye';
+});
+
+/* ════════════════════════════════
+   FILE LOADING
+════════════════════════════════ */
+function loadFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    toast('⚠ Please upload an image file');
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    toast('⚠ File too large — max 20 MB');
+    return;
+  }
+
+  currentFile = file;
+
+  /* preview */
+  const url        = URL.createObjectURL(file);
+  previewImg.src   = url;
+  fileNameEl.textContent = file.name;
+  fileSizeEl.textContent = formatBytes(file.size);
+  previewBox.style.display  = 'block';
+  clearBtn.style.display    = 'inline-flex';
+  extractBtn.disabled       = false;
+
+  /* reset result */
+  resultCard.style.display = 'none';
+  rawText = '';
+  outputArea.value = '';
+}
+
+/* drag & drop */
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  loadFile(e.dataTransfer.files[0]);
+});
+
+/* file input click */
+fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
+
+/* paste from clipboard */
+pasteBtn.addEventListener('click', async () => {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find(t => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        loadFile(new File([blob], 'pasted-image.png', { type: imageType }));
+        return;
       }
-    }, speed);
-    return () => clearInterval(ref.current);
-  }, [text, speed]);
-
-  return displayed;
-}
-
-export default function App() {
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [mode, setMode] = useState("plain");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [tokens, setTokens] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef(null);
-  const textareaRef = useRef(null);
-  const displayed = useTypewriter(result, 6);
-
-  const handleFile = useCallback((file) => {
-    if (!file) return;
-    setImage(file);
-    setResult("");
-    setError("");
-    setTokens(0);
-    const reader = new FileReader();
-    reader.onload = (e) => setImagePreview(e.target.result);
-    reader.readAsDataURL(file);
-  }, []);
-
-  const onFileChange = (e) => handleFile(e.target.files[0]);
-
-  const onDrop = useCallback(
-    (e) => {
-      e.preventDefault();
-      setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith("image/")) handleFile(file);
-    },
-    [handleFile]
-  );
-
-  const onPaste = useCallback(
-    (e) => {
-      const items = Array.from(e.clipboardData.items);
-      const imgItem = items.find((i) => i.type.startsWith("image/"));
-      if (imgItem) handleFile(imgItem.getAsFile());
-    },
-    [handleFile]
-  );
-
-  useEffect(() => {
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, [onPaste]);
-
-  const extract = async () => {
-    if (!image) return;
-    setLoading(true);
-    setError("");
-    setResult("");
-    setTokens(0);
-
-    const formData = new FormData();
-    formData.append("image", image);
-    formData.append("mode", mode);
-
-    try {
-      const res = await fetch("/api/extract", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Extraction failed");
-      setResult(data.text);
-      setTokens(data.tokens || 0);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
-  };
+    toast('⚠ No image found in clipboard');
+  } catch {
+    toast('⚠ Clipboard access denied — paste manually');
+  }
+});
 
-  const copy = () => {
-    if (!result) return;
-    navigator.clipboard.writeText(result).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+/* global paste shortcut Ctrl+V / Cmd+V */
+document.addEventListener('paste', e => {
+  const items = [...(e.clipboardData?.items || [])];
+  const imgItem = items.find(i => i.type.startsWith('image/'));
+  if (imgItem) loadFile(imgItem.getAsFile());
+});
 
-  const clear = () => {
-    setImage(null);
-    setImagePreview(null);
-    setResult("");
-    setError("");
-    setTokens(0);
-    if (fileRef.current) fileRef.current.value = "";
-  };
+/* ── Clear ── */
+clearBtn.addEventListener('click', () => {
+  currentFile = null; rawText = '';
+  fileInput.value      = '';
+  previewImg.src       = '';
+  previewBox.style.display  = 'none';
+  clearBtn.style.display    = 'none';
+  extractBtn.disabled       = true;
+  resultCard.style.display  = 'none';
+  outputArea.value          = '';
+  dropZone.classList.remove('over');
+});
 
-  const downloadTxt = () => {
-    if (!result) return;
-    const blob = new Blob([result], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `extracted_${mode}_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="app">
-      {/* Background mesh */}
-      <div className="mesh" aria-hidden="true">
-        <div className="mesh-orb orb1" />
-        <div className="mesh-orb orb2" />
-        <div className="mesh-orb orb3" />
-        <div className="mesh-grid" />
-      </div>
-
-      {/* Header */}
-      <header className="header">
-        <div className="logo">
-          <span className="logo-icon">⚡</span>
-          <span className="logo-text">SnapText</span>
-          <span className="logo-badge">AI</span>
-        </div>
-        <p className="tagline">Screenshot → Editable Text, instantly</p>
-      </header>
-
-      <main className="main">
-        {/* Left Panel */}
-        <section className="panel panel-left">
-          <div className="panel-header">
-            <span className="step-num">01</span>
-            <h2>Upload Screenshot</h2>
-          </div>
-
-          {/* Drop Zone */}
-          <div
-            className={`dropzone ${dragOver ? "drag-active" : ""} ${imagePreview ? "has-image" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => !imagePreview && fileRef.current?.click()}
-          >
-            {imagePreview ? (
-              <div className="preview-wrap">
-                <img src={imagePreview} alt="Preview" className="preview-img" />
-                <button className="remove-btn" onClick={(e) => { e.stopPropagation(); clear(); }}>
-                  ✕ Remove
-                </button>
-              </div>
-            ) : (
-              <div className="drop-inner">
-                <div className="drop-icon">
-                  <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="4" y="8" width="40" height="32" rx="4" stroke="currentColor" strokeWidth="2"/>
-                    <circle cx="16" cy="20" r="4" stroke="currentColor" strokeWidth="2"/>
-                    <path d="M4 34l12-10 8 8 8-6 12 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    <path d="M32 4v12M26 8l6-4 6 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-                <p className="drop-title">Drop your screenshot here</p>
-                <p className="drop-sub">or click to browse · paste from clipboard</p>
-                <p className="drop-formats">PNG · JPG · WEBP · GIF · max 10 MB</p>
-              </div>
-            )}
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            onChange={onFileChange}
-            style={{ display: "none" }}
-          />
-
-          {/* Mode selector */}
-          <div className="panel-header" style={{ marginTop: "28px" }}>
-            <span className="step-num">02</span>
-            <h2>Output Mode</h2>
-          </div>
-          <div className="mode-grid">
-            {MODES.map((m) => (
-              <button
-                key={m.id}
-                className={`mode-btn ${mode === m.id ? "active" : ""}`}
-                onClick={() => setMode(m.id)}
-              >
-                <span className="mode-icon">{m.icon}</span>
-                <span className="mode-label">{m.label}</span>
-                <span className="mode-desc">{m.desc}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Extract button */}
-          <button
-            className={`extract-btn ${loading ? "loading" : ""}`}
-            onClick={extract}
-            disabled={!image || loading}
-          >
-            {loading ? (
-              <>
-                <span className="spinner" />
-                Extracting…
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                </svg>
-                Extract Text
-              </>
-            )}
-          </button>
-        </section>
-
-        {/* Right Panel */}
-        <section className="panel panel-right">
-          <div className="panel-header">
-            <span className="step-num">03</span>
-            <h2>Editable Result</h2>
-            {tokens > 0 && (
-              <span className="token-badge">{tokens} tokens</span>
-            )}
-          </div>
-
-          {error && (
-            <div className="error-box">
-              <span>⚠</span> {error}
-            </div>
-          )}
-
-          <div className="textarea-wrap">
-            <textarea
-              ref={textareaRef}
-              className={`result-textarea ${mode === "code" ? "mono" : ""}`}
-              value={displayed}
-              onChange={(e) => setResult(e.target.value)}
-              placeholder={
-                loading
-                  ? "AI is reading your screenshot…"
-                  : "Extracted text will appear here and become fully editable…"
-              }
-              spellCheck={mode !== "code"}
-            />
-            {!result && !loading && (
-              <div className="textarea-hint">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="40" height="40">
-                  <path d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                <p>Upload a screenshot and hit Extract</p>
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="actions">
-            <button
-              className="action-btn primary"
-              onClick={copy}
-              disabled={!result}
-            >
-              {copied ? "✓ Copied!" : "Copy Text"}
-            </button>
-            <button
-              className="action-btn"
-              onClick={downloadTxt}
-              disabled={!result}
-            >
-              Download .txt
-            </button>
-            <button
-              className="action-btn danger"
-              onClick={clear}
-              disabled={!image && !result}
-            >
-              Clear All
-            </button>
-          </div>
-
-          {/* Character count */}
-          {result && (
-            <div className="stats">
-              <span>{result.length} chars</span>
-              <span>·</span>
-              <span>{result.trim().split(/\s+/).filter(Boolean).length} words</span>
-              <span>·</span>
-              <span>{result.split("\n").length} lines</span>
-            </div>
-          )}
-        </section>
-      </main>
-
-      <footer className="footer">
-        <p>Powered by <strong>Groq</strong> · Llama 4 Scout vision model</p>
-      </footer>
-    </div>
-  );
+/* ════════════════════════════════
+   BASE64 HELPER
+════════════════════════════════ */
+function toBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
 }
+
+/* ════════════════════════════════
+   EXTRACT — call Groq API
+════════════════════════════════ */
+extractBtn.addEventListener('click', async () => {
+  const apiKey = apiKeyEl.value.trim();
+  if (!apiKey) { toast('⚠ Enter your Groq API key first'); return; }
+  if (!currentFile) { toast('⚠ Upload a screenshot first'); return; }
+
+  /* loading state */
+  setLoading(true);
+
+  try {
+    const t0     = Date.now();
+    const b64    = await toBase64(currentFile);
+    const mime   = currentFile.type || 'image/jpeg';
+
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model:      GROQ_MODEL,
+        max_tokens: 4096,
+        temperature: 0,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mime};base64,${b64}` }
+            },
+            {
+              type: 'text',
+              text: 'Extract ALL text visible in this image exactly as it appears. Preserve line breaks, spacing, and structure as much as possible. Return only the extracted text — no explanations, no preamble.'
+            }
+          ]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    rawText = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!rawText) throw new Error('Model returned no text');
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+    /* show result */
+    applyMode(currentMode);
+    updateStats(outputArea.value, elapsed);
+    resultCard.style.display = 'block';
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    /* save history */
+    saveHistory(rawText);
+    toast(`✓ Done in ${elapsed}s`);
+
+  } catch (err) {
+    toast(`Error: ${err.message}`, 4500);
+  } finally {
+    setLoading(false);
+  }
+});
+
+/* ════════════════════════════════
+   MODE TABS
+════════════════════════════════ */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    applyMode(currentMode);
+    updateStats(outputArea.value);
+  });
+});
+
+function applyMode(mode) {
+  if (!rawText) return;
+  let out = rawText;
+
+  if (mode === 'clean') {
+    out = rawText
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  if (mode === 'markdown') {
+    out = rawText.split('\n').map(line => {
+      const l = line.trim();
+      if (!l) return '';
+      /* treat short ALL-CAPS or Title-Case short lines as headings */
+      if (l.length < 60 && /^[A-Z]/.test(l) && !/[.;,]$/.test(l)) return `## ${l}`;
+      return l;
+    }).join('\n');
+  }
+
+  outputArea.value = out;
+}
+
+/* live edit updates stats */
+outputArea.addEventListener('input', () => updateStats(outputArea.value));
+
+/* ════════════════════════════════
+   STATS
+════════════════════════════════ */
+function updateStats(text, elapsed) {
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text.trim() ? text.trim().split('\n').length : 0;
+  statChars.innerHTML = `<i class="ti ti-letter-case"></i> ${chars.toLocaleString()} chars`;
+  statWords.innerHTML = `<i class="ti ti-blockquote"></i> ${words.toLocaleString()} words`;
+  statLines.innerHTML = `<i class="ti ti-list"></i> ${lines.toLocaleString()} lines`;
+  if (elapsed) statTime.innerHTML = `<i class="ti ti-clock"></i> ${elapsed}s`;
+}
+
+/* ════════════════════════════════
+   COPY & DOWNLOAD
+════════════════════════════════ */
+copyBtn.addEventListener('click', () => {
+  if (!outputArea.value) { toast('Nothing to copy'); return; }
+  navigator.clipboard.writeText(outputArea.value)
+    .then(() => toast('✓ Copied to clipboard'))
+    .catch(() => toast('⚠ Copy failed'));
+});
+
+dlTxt.addEventListener('click', () => download(outputArea.value, 'extracted_text.txt', 'text/plain'));
+dlMd.addEventListener('click',  () => download(outputArea.value, 'extracted_text.md',  'text/markdown'));
+
+function download(content, filename, type) {
+  if (!content) { toast('Nothing to download'); return; }
+  const a = document.createElement('a');
+  a.href  = URL.createObjectURL(new Blob([content], { type }));
+  a.download = filename;
+  a.click();
+  toast(`✓ Downloaded ${filename}`);
+}
+
+/* ════════════════════════════════
+   HISTORY
+════════════════════════════════ */
+function saveHistory(text) {
+  const entry = {
+    id:      Date.now(),
+    preview: text.slice(0, 80).replace(/\n/g, ' '),
+    text,
+    time:    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  };
+  history.unshift(entry);
+  if (history.length > MAX_HIST) history = history.slice(0, MAX_HIST);
+  localStorage.setItem('ocr_history', JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!history.length) {
+    historyCard.style.display = 'none';
+    return;
+  }
+  historyCard.style.display = 'block';
+  historyList.innerHTML = history.map(h => `
+    <div class="h-item" onclick="loadFromHistory(${h.id})">
+      <span class="h-preview">${escapeHtml(h.preview)}…</span>
+      <span class="h-time">${h.time}</span>
+    </div>
+  `).join('');
+}
+
+function loadFromHistory(id) {
+  const entry = history.find(h => h.id === id);
+  if (!entry) return;
+  rawText = entry.text;
+  applyMode(currentMode);
+  updateStats(outputArea.value);
+  resultCard.style.display = 'block';
+  resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast('✓ Loaded from history');
+}
+window.loadFromHistory = loadFromHistory; /* expose for inline onclick */
+
+clearHistBtn.addEventListener('click', () => {
+  history = [];
+  localStorage.removeItem('ocr_history');
+  renderHistory();
+  toast('History cleared');
+});
+
+/* ════════════════════════════════
+   LOADING STATE
+════════════════════════════════ */
+function setLoading(on) {
+  extractBtn.disabled = on;
+  spinner.classList.toggle('hidden', !on);
+  btnLabel.textContent = on ? 'Extracting...' : 'Extract Text';
+}
+
+/* ════════════════════════════════
+   HELPERS
+════════════════════════════════ */
+function formatBytes(bytes) {
+  if (bytes < 1024)       return bytes + ' B';
+  if (bytes < 1024*1024)  return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ════════════════════════════════
+   INIT
+════════════════════════════════ */
+renderHistory();
