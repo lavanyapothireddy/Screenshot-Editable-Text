@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: screenshot-to-text
-    runtime: node
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: GROQ_API_KEY
-        sync: false
