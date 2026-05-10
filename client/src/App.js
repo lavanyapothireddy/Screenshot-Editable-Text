@@ -49,18 +49,18 @@ export default function App() {
     [handleFile]
   );
 
-  const onDragOver = (e) => {
-    e.preventDefault();
-    setDragOver(true);
-  };
+  const onDragOver = (e) => { e.preventDefault(); setDragOver(true); };
   const onDragLeave = () => setDragOver(false);
 
-  const handlePaste = useCallback(
+  // ✅ Paste handler lives ONLY on the drop zone, not the whole app
+  // This way pasting text inside the textarea works normally
+  const handleDropZonePaste = useCallback(
     (e) => {
       const items = e.clipboardData?.items;
       if (!items) return;
       for (let item of items) {
         if (item.type.startsWith("image/")) {
+          e.preventDefault();
           handleFile(item.getAsFile());
           break;
         }
@@ -94,11 +94,27 @@ export default function App() {
         lines: data.text.split("\n").length,
         model: data.model,
       });
+      // Auto-focus textarea so user can immediately edit
+      setTimeout(() => textAreaRef.current?.focus(), 150);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Update stats live as user edits
+  const handleTextChange = (e) => {
+    const val = e.target.value;
+    setExtractedText(val);
+    setStats((prev) =>
+      prev ? {
+        ...prev,
+        chars: val.length,
+        words: val.trim().split(/\s+/).filter(Boolean).length,
+        lines: val.split("\n").length,
+      } : null
+    );
   };
 
   const copyText = () => {
@@ -128,8 +144,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" onPaste={handlePaste}>
-      {/* Header */}
+    <div className="app">
       <header className="header">
         <div className="header-inner">
           <div className="logo">
@@ -144,7 +159,6 @@ export default function App() {
       </header>
 
       <main className="main">
-        {/* Mode selector */}
         <section className="mode-section">
           <p className="section-label">Extraction Mode</p>
           <div className="mode-tabs">
@@ -162,25 +176,25 @@ export default function App() {
           </div>
         </section>
 
-        {/* Upload + Output panels */}
         <div className="panels">
           {/* Left: Upload */}
           <div className="panel upload-panel">
             <div className="panel-header">
               <span className="panel-title">Input Image</span>
               {image && (
-                <button className="clear-btn" onClick={clearAll}>
-                  ✕ Clear
-                </button>
+                <button className="clear-btn" onClick={clearAll}>✕ Clear</button>
               )}
             </div>
 
+            {/* onPaste ONLY here — not on root div */}
             <div
               className={`drop-zone ${dragOver ? "drag-over" : ""} ${imagePreview ? "has-image" : ""}`}
               onClick={() => !imagePreview && fileInputRef.current?.click()}
               onDrop={onDrop}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
+              onPaste={handleDropZonePaste}
+              tabIndex={0}
             >
               {imagePreview ? (
                 <img src={imagePreview} alt="Uploaded" className="preview-img" />
@@ -188,7 +202,7 @@ export default function App() {
                 <div className="drop-placeholder">
                   <div className="drop-icon">⬆</div>
                   <p className="drop-title">Drop your screenshot here</p>
-                  <p className="drop-hint">or click to browse · paste with Ctrl+V</p>
+                  <p className="drop-hint">or click to browse · paste image with Ctrl+V</p>
                   <p className="drop-types">PNG · JPG · WEBP · GIF · up to 10MB</p>
                 </div>
               )}
@@ -216,20 +230,20 @@ export default function App() {
               disabled={!image || loading}
             >
               {loading ? (
-                <>
-                  <span className="spinner" />
-                  Extracting...
-                </>
+                <><span className="spinner" />Extracting...</>
               ) : (
                 <>◈ Extract Text</>
               )}
             </button>
           </div>
 
-          {/* Right: Output */}
+          {/* Right: Output — textarea only, nothing covering it */}
           <div className="panel output-panel">
             <div className="panel-header">
-              <span className="panel-title">Extracted Text</span>
+              <span className="panel-title">
+                Extracted Text
+                {extractedText && <span className="editable-hint"> · freely editable</span>}
+              </span>
               {extractedText && (
                 <div className="output-actions">
                   <button className="action-btn" onClick={copyText}>
@@ -251,28 +265,18 @@ export default function App() {
               </div>
             )}
 
-            <div className="textarea-wrapper">
-              <textarea
-                ref={textAreaRef}
-                className="output-textarea"
-                value={extractedText}
-                onChange={(e) => setExtractedText(e.target.value)}
-                readOnly={false}
-                disabled={false}
-                placeholder={
-                  loading
-                    ? "Extracting text from your image..."
-                    : "Extracted text will appear here — fully editable!"
-                }
-                spellCheck
-              />
-              {!extractedText && !loading && (
-                <div className="output-empty">
-                  <div className="empty-icon">⊡</div>
-                  <p>Upload an image and click Extract Text</p>
-                </div>
-              )}
-            </div>
+            {/* ✅ Clean textarea — no overlapping divs, no position:absolute children */}
+            <textarea
+              ref={textAreaRef}
+              className="output-textarea"
+              value={extractedText}
+              onChange={handleTextChange}
+              placeholder={
+                loading
+                  ? "⏳ Extracting text from your image..."
+                  : "Extracted text appears here.\nClick anywhere in this box to edit it!"
+              }
+            />
           </div>
         </div>
       </main>
