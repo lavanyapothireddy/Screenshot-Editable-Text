@@ -251,25 +251,28 @@ export default function App() {
               </div>
             )}
 
-            <textarea
-              ref={textAreaRef}
-              className="output-textarea"
-              value={extractedText}
-              onChange={(e) => setExtractedText(e.target.value)}
-              placeholder={
-                loading
-                  ? "Extracting text from your image..."
-                  : "Extracted text will appear here — fully editable!"
-              }
-              spellCheck
-            />
-
-            {!extractedText && !loading && (
-              <div className="output-empty">
-                <div className="empty-icon">⊡</div>
-                <p>Upload an image and click Extract Text</p>
-              </div>
-            )}
+            <div className="textarea-wrapper">
+              <textarea
+                ref={textAreaRef}
+                className="output-textarea"
+                value={extractedText}
+                onChange={(e) => setExtractedText(e.target.value)}
+                readOnly={false}
+                disabled={false}
+                placeholder={
+                  loading
+                    ? "Extracting text from your image..."
+                    : "Extracted text will appear here — fully editable!"
+                }
+                spellCheck
+              />
+              {!extractedText && !loading && (
+                <div className="output-empty">
+                  <div className="empty-icon">⊡</div>
+                  <p>Upload an image and click Extract Text</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>
