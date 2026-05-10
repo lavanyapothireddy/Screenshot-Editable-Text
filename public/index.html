@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Screenshot → Editable Text</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="logo-wrap">
+        <div class="logo"><i class="ti ti-scan"></i></div>
+        <div>
+          <div class="app-title">Screenshot → Editable Text</div>
+          <div class="app-sub">OCR powered by Groq Vision AI</div>
+        </div>
+      </div>
+      <span class="free-badge">FREE</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="container">
+
+      <!-- UPLOAD -->
+      <div class="card">
+        <div class="section-label"><i class="ti ti-photo"></i> Upload Screenshot</div>
+
+        <div class="drop-zone" id="dropZone">
+          <input type="file" class="file-input" id="fileInput" accept="image/*" />
+          <div class="drop-icon-box">
+            <i class="ti ti-photo-up"></i>
+          </div>
+          <div class="drop-title">Drop image here or click to browse</div>
+          <div class="drop-sub">PNG · JPG · WEBP · BMP &nbsp;|&nbsp; Max 20 MB</div>
+        </div>
+
+        <!-- Preview -->
+        <div class="preview-box" id="previewBox">
+          <div class="preview-meta">
+            <span id="fileName" class="file-name"></span>
+            <span id="fileSize" class="file-size"></span>
+          </div>
+          <img id="previewImg" class="preview-img" alt="Preview" />
+        </div>
+
+        <!-- Buttons -->
+        <div class="btn-row">
+          <button class="btn btn-primary" id="extractBtn" disabled>
+            <i class="ti ti-text-recognition"></i>
+            <span id="btnLabel">Extract Text</span>
+            <div class="spinner hidden" id="spinner"></div>
+          </button>
+          <button class="btn btn-ghost" id="clearBtn" style="display:none">
+            <i class="ti ti-trash"></i> Clear
+          </button>
+          <button class="btn btn-ghost" id="pasteBtn">
+            <i class="ti ti-clipboard"></i> Paste from clipboard
+          </button>
+        </div>
+      </div>
+
+      <!-- RESULT -->
+      <div class="card" id="resultCard" style="display:none">
+        <div class="result-header">
+          <div class="section-label" style="margin:0"><i class="ti ti-file-text"></i> Extracted Text</div>
+          <div class="action-btns">
+            <button class="icon-btn" id="copyBtn"><i class="ti ti-copy"></i> Copy</button>
+            <button class="icon-btn" id="dlTxt"><i class="ti ti-download"></i> .txt</button>
+            <button class="icon-btn" id="dlMd"><i class="ti ti-markdown"></i> .md</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" data-mode="raw">Raw</button>
+          <button class="tab" data-mode="clean">Cleaned</button>
+          <button class="tab" data-mode="markdown">Markdown</button>
+        </div>
+
+        <textarea id="outputArea" class="output-area" spellcheck="false" placeholder="Extracted text will appear here..."></textarea>
+
+        <div class="stats">
+          <span id="statChars"><i class="ti ti-letter-case"></i> 0 chars</span>
+          <span id="statWords"><i class="ti ti-blockquote"></i> 0 words</span>
+          <span id="statLines"><i class="ti ti-list"></i> 0 lines</span>
+          <span id="statTime" style="margin-left:auto"></span>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="card" id="historyCard" style="display:none">
+        <div class="result-header">
+          <div class="section-label" style="margin:0"><i class="ti ti-history"></i> Recent Extractions</div>
+          <button class="icon-btn" id="clearHistoryBtn"><i class="ti ti-trash"></i> Clear all</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="js/app.js"></script>
+</body>
+</html>
