@@ -1,0 +1,13 @@
+{
+  "name": "screenshot-to-text",
+  "version": "1.0.0",
+  "description": "Screenshot to Editable Text using Groq Vision AI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
