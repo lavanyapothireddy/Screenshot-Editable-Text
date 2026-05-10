@@ -412,6 +412,12 @@ body::before {
   outline: none;
   transition: border-color 0.2s ease;
   width: 100%;
+  position: relative;
+  z-index: 2;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+  pointer-events: all;
 }
 
 .output-textarea:focus {
@@ -429,6 +435,13 @@ body::before {
   position: relative;
 }
 
+.textarea-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .output-empty {
   position: absolute;
   top: 50%;
@@ -437,6 +450,7 @@ body::before {
   text-align: center;
   color: var(--text2);
   pointer-events: none;
+  z-index: 1;
 }
 
 .empty-icon {
