@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: snapshot-to-text
+    env: node
+    plan: free
+    buildCommand: npm run install-all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GROQ_API_KEY
+        sync: false   # You will set this manually in Render dashboard
