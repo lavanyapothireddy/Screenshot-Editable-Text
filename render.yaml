@@ -1,10 +1,9 @@
 services:
   - type: web
     name: screenshot-to-text
-    runtime: static
-    buildCommand: ""
-    staticPublishPath: "."
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
