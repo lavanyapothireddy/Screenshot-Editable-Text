@@ -58,7 +58,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Extraction failed.");
       if (!data.blocks || data.blocks.length === 0) {
-        setError("No text detected in this image.");
+        setError("Could not detect text blocks — please click Detect Text Blocks again to retry.");
         return;
       }
       setBlocks(data.blocks.map((b, i) => ({ ...b, id: b.id ?? i, edited: false })));
