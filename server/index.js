@@ -2,124 +2,99 @@ const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const Groq = require("groq-sdk");
-const fs = require("fs");
 const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "20mb" }));
 
-// Serve static frontend in production
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../client/build")));
 }
 
-// Multer config — store in memory
-const storage = multer.memoryStorage();
 const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed (JPEG, PNG, WEBP, GIF)"));
-    }
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Images only"));
   },
 });
 
-// POST /api/extract — main endpoint
 app.post("/api/extract", upload.single("image"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No image file uploaded." });
-    }
+    if (!req.file) return res.status(400).json({ error: "No image uploaded." });
+    if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: "GROQ_API_KEY not configured." });
 
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ error: "GROQ_API_KEY is not configured on the server." });
-    }
-
-    // Convert image buffer to base64
     const base64Image = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype;
 
-    const mode = req.body.mode || "full"; // "full" | "structured" | "code"
+    const prompt = `You are an OCR tool. Analyze this image and find every piece of visible text.
 
-    const prompts = {
-      full: "Extract ALL text from this image exactly as it appears. Preserve formatting, line breaks, bullet points, and structure as much as possible. Return only the extracted text with no additional commentary.",
-      structured:
-        "Extract all text from this image and organize it in a clean, structured Markdown format. Use headings, lists, and tables where appropriate. Return only the formatted text.",
-      code: "This image may contain code or technical content. Extract ALL text including code snippets, variable names, comments, and any surrounding text. Preserve indentation and formatting. Return only the extracted content.",
-    };
+For EACH distinct text block (label, heading, paragraph, button, caption, etc.), return a JSON object with:
+- "id": sequential number starting at 0
+- "text": the EXACT text content as it appears
+- "x": left edge position as % of image width (0-100)
+- "y": top edge position as % of image height (0-100)  
+- "w": width of the text block as % of image width (0-100)
+- "h": height of the text block as % of image height (0-100)
+- "size": "small" | "medium" | "large" based on font size relative to image
+- "color": "light" if text is white/light colored, "dark" if text is black/dark colored
 
-    const prompt = prompts[mode] || prompts.full;
+Return ONLY a valid JSON array. No markdown. No explanation. No extra text. Just the raw JSON array starting with [ and ending with ].
 
-    // Call Groq with vision model
+Example format:
+[{"id":0,"text":"Hello World","x":10,"y":5,"w":40,"h":8,"size":"large","color":"dark"}]`;
+
     const completion = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-              },
-            },
-            {
-              type: "text",
-              text: prompt,
-            },
-          ],
-        },
-      ],
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+          { type: "text", text: prompt }
+        ]
+      }],
       max_tokens: 4096,
-      temperature: 0.1,
+      temperature: 0.05,
     });
 
-    const extractedText = completion.choices[0]?.message?.content || "";
-
-    res.json({
-      success: true,
-      text: extractedText,
-      model: completion.model,
-      usage: completion.usage,
-    });
-  } catch (error) {
-    console.error("Extraction error:", error);
-
-    if (error.status === 401) {
-      return res.status(401).json({ error: "Invalid Groq API key. Check your GROQ_API_KEY environment variable." });
-    }
-    if (error.status === 429) {
-      return res.status(429).json({ error: "Rate limit exceeded. Please wait a moment and try again." });
+    let raw = completion.choices[0]?.message?.content || "[]";
+    raw = raw.replace(/```json|```/g, "").trim();
+    const match = raw.match(/\[[\s\S]*\]/);
+    let blocks = [];
+    if (match) {
+      try { blocks = JSON.parse(match[0]); } catch(e) { blocks = []; }
     }
 
-    res.status(500).json({
-      error: error.message || "Failed to extract text from image.",
-    });
+    // Sanitize block values
+    blocks = blocks.map((b, i) => ({
+      id: typeof b.id === "number" ? b.id : i,
+      text: String(b.text || ""),
+      x: Math.max(0, Math.min(100, Number(b.x) || 0)),
+      y: Math.max(0, Math.min(100, Number(b.y) || 0)),
+      w: Math.max(1, Math.min(100, Number(b.w) || 10)),
+      h: Math.max(1, Math.min(100, Number(b.h) || 5)),
+      size: ["small","medium","large"].includes(b.size) ? b.size : "medium",
+      color: b.color === "light" ? "light" : "dark",
+    }));
+
+    res.json({ success: true, blocks });
+  } catch (err) {
+    console.error("Extract error:", err);
+    if (err.status === 401) return res.status(401).json({ error: "Invalid Groq API key." });
+    if (err.status === 429) return res.status(429).json({ error: "Rate limit hit. Please wait and retry." });
+    res.status(500).json({ error: err.message || "Extraction failed." });
   }
 });
 
-// Health check
 app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    groqConfigured: !!process.env.GROQ_API_KEY,
-  });
+  res.json({ status: "ok", groqConfigured: !!process.env.GROQ_API_KEY });
 });
 
-// Catch-all for React router in production
 if (process.env.NODE_ENV === "production") {
   app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "../client/build/index.html"));
@@ -127,6 +102,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🔑 Groq API Key: ${process.env.GROQ_API_KEY ? "Configured ✓" : "NOT SET ✗"}`);
+  console.log(`Server on port ${PORT}`);
+  console.log(`Groq: ${process.env.GROQ_API_KEY ? "✓" : "✗ MISSING"}`);
 });
+
