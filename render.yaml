@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: snapshot-to-text
+    name: snapedit
     env: node
     plan: free
     buildCommand: npm install && cd client && npm install && npm run build && cd ..
