@@ -1,9 +1,8 @@
 {
-  "name": "screenshot-to-text",
+  "name": "snapedit",
   "version": "1.0.0",
-  "description": "Screenshot to Editable Text Tool — Full Stack",
   "scripts": {
-    "build": "npm install && cd client && npm install && npm run build && cd ..",
+    "build": "cd client && npm install && npm run build",
     "start": "node server/index.js"
   },
   "dependencies": {
@@ -12,7 +11,5 @@
     "groq-sdk": "^0.9.1",
     "multer": "^1.4.5-lts.1"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "engines": { "node": ">=18.0.0" }
 }
