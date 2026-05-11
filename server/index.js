@@ -3,7 +3,6 @@ const multer = require("multer");
 const cors = require("cors");
 const Groq = require("groq-sdk");
 const path = require("path");
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
